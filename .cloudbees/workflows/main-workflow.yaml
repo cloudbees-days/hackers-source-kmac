@@ -1,6 +1,6 @@
 apiVersion: automation.cloudbees.io/v1alpha1
 kind: workflow
-name: test-invalid
+name: test-bad-action
 on:
   push:
     branches:
@@ -8,6 +8,5 @@ on:
 jobs:
   build:
     steps:
-      - name: missing-uses-step
-        with:
-          foo: bar
+      - name: bad-action
+        uses: cloudbees-io/totally-fake-action@v999
