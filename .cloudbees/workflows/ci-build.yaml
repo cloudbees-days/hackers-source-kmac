@@ -1,0 +1,60 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: CI Build
+on:
+  push:
+    branches:
+      - main
+      - "**"
+  workflow_dispatch:
+permissions:
+  scm-token-own: read
+jobs:
+  test:
+    steps:
+      - name: Checkout repository
+        uses: cloudbees-io/checkout@v1
+      - name: Run unit tests
+        id: unit-tests
+        kind: test
+        uses: docker://python:3.11-slim
+        run: |
+          pip install -r Tools/webapp/requirements-test.txt
+          python3 -m pytest tests/ -v --tb=short --junitxml=test-results.xml 2>&1 | tee test-output.txt
+          PASSED=$(grep -c "PASSED" test-output.txt || echo 0)
+          FAILED=$(grep -c "FAILED" test-output.txt || echo 0)
+          echo "$PASSED" >> $CLOUDBEES_OUTPUTS/TESTS_PASSED
+          echo "$FAILED" >> $CLOUDBEES_OUTPUTS/TESTS_FAILED
+      - name: Run route smoke tests
+        id: route-tests
+        kind: test
+        uses: docker://python:3.11-slim
+        run: |
+          pip install -r Tools/webapp/requirements-test.txt
+          cd Tools/webapp
+          python3 -m pytest tests/test_routes.py -v --tb=short 2>&1 | tee route-test-output.txt
+          PASSED=$(grep -c "PASSED" route-test-output.txt || echo 0)
+          echo "$PASSED" >> $CLOUDBEES_OUTPUTS/ROUTE_TESTS_PASSED
+      - name: Publish test evidence
+        uses: cloudbees-io/publish-evidence-item@v1
+        with:
+          content: |-
+            ## CI Test Results
+            **Run ID:** ${{ cloudbees.run_id }}
+            **Commit:** ${{ cloudbees.scm.sha }}
+            **Branch:** ${{ cloudbees.scm.branch }}
+
+            ### Unit Tests
+            | Metric | Count |
+            |--------|-------|
+            | Passed | ${{ steps.unit-tests.outputs.TESTS_PASSED }} |
+            | Failed | ${{ steps.unit-tests.outputs.TESTS_FAILED }} |
+
+            ### Route Smoke Tests
+            | Metric | Count |
+            |--------|-------|
+            | Passed | ${{ steps.route-tests.outputs.ROUTE_TESTS_PASSED }} |
+          format: MARKDOWN
+    outputs:
+      TESTS_PASSED: ${{ steps.unit-tests.outputs.TESTS_PASSED }}
+      TESTS_FAILED: ${{ steps.unit-tests.outputs.TESTS_FAILED }}
